@@ -1,0 +1,2282 @@
+package com.music;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class MusicApplication {
+
+	public static void main(String[] args) {
+		SpringApplication.run(MusicApplication.class, args);
+	}
+}
+
+------------------------------------------------
+
+package com.music.config;
+
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+import springfox.documentation.builders.RequestHandlerSelectors;
+import springfox.documentation.spi.DocumentationType;
+import springfox.documentation.spring.web.plugins.Docket;
+import springfox.documentation.swagger2.annotations.EnableSwagger2;
+
+
+@Configuration
+@EnableSwagger2
+public class SwaggerConfig {
+	@Bean
+	public Docket postsApi() {
+		return new Docket(DocumentationType.SWAGGER_2).select().apis(RequestHandlerSelectors.basePackage("com")).build();
+	}
+}	
+
+------------------------------------------------
+
+package com.music.controller;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+
+import javax.servlet.http.HttpSession;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.ModelAndView;
+
+import com.music.dao.MusicDAO;
+import com.music.dao.UserDAO;
+import com.music.entity.Music;
+import com.music.entity.Orders;
+import com.music.entity.User;
+
+@RestController
+public class MusicController {
+	@Autowired
+	private UserDAO userDAO;
+	@Autowired
+	private MusicDAO musicDAO;
+	
+	@GetMapping("")
+	public ModelAndView displayMainPage() {
+		return new ModelAndView("main");
+	}
+	
+	@GetMapping("/register")
+	public ModelAndView displayRegisterUserPage() {
+		return new ModelAndView("register");
+	}
+	
+	@PostMapping("/register")
+	public ModelAndView addUser(@RequestParam("username") String username,
+							    @RequestParam("name") String name,
+								@RequestParam("email") String email,
+								@RequestParam("phone") String phone,
+								@RequestParam("password") String password,
+								@RequestParam("billAddress") String billAddress,
+								@RequestParam("billCity") String billCity,
+								@RequestParam("billState") String billState,
+								@RequestParam("billCountry") String billCountry,
+								@RequestParam("billZipcode") String billZipcode,
+								@RequestParam("shipAddress") String shipAddress,
+								@RequestParam("shipCity") String shipCity,
+								@RequestParam("shipState") String shipState,
+								@RequestParam("shipCountry") String shipCountry,
+								@RequestParam("shipZipcode") String shipZipcode) {
+		User user = new User(username, name, email, phone, password, 
+							 billAddress, billCity, billState, billCountry, billZipcode,
+							 shipAddress, shipCity, shipState, shipCountry, shipZipcode);
+		userDAO.save(user); 
+		return new ModelAndView("main");
+	}
+	
+	@GetMapping("/login")
+	public ModelAndView displayLoginPage() {
+		return new ModelAndView("login");
+	}
+	
+	@PostMapping("/login")
+	public ModelAndView loginUser(@RequestParam("username") String username,
+			  					  @RequestParam("password") String password,
+			  					  HttpSession session) {
+		if(userDAO.existsById(username) && userDAO.findById(username).get().getUsername().equals("admin")) {
+			List<User> users = (List<User>)userDAO.findAll();
+			for(User u : users) {
+				if(u.getName().equals("admin")) {
+					users.remove(u);
+				}
+			}
+			session.setAttribute("users", users);
+		}
+		if(userDAO.existsById(username) && userDAO.findById(username).get().getPassword().equals(password)) {
+			session.setAttribute("user", userDAO.findById(username).get());
+			return new ModelAndView("main");
+		}
+		return new ModelAndView("login");
+	}
+	
+	@GetMapping("/logout")
+	public ModelAndView logoutUser(HttpSession session) {
+		session.setAttribute("user", null);
+		session.setAttribute("orders", null);
+		session.setAttribute("music", null);
+		session.invalidate();
+		return new ModelAndView("main");
+	}
+		
+	@GetMapping("/music")
+	public ModelAndView displayMusicPage(HttpSession session) {
+		List<Music> musics = (List<Music>)musicDAO.findAll();
+		session.setAttribute("musics", musics);
+		return new ModelAndView("music");
+	}
+	
+	@GetMapping("/music/{productname}")
+	public ModelAndView displayMusicInfoPage(@PathVariable("productname") String productname,
+											 HttpSession session) {
+		Optional<Music> music = musicDAO.findById(productname);
+		session.setAttribute("music", music);
+		return new ModelAndView("info");
+	}
+	
+	@GetMapping("/cart")
+	public ModelAndView displayCartPage() {
+		return new ModelAndView("cart");
+	}
+	
+	@GetMapping("/addcart/{productname}")
+	public ModelAndView addProductToCart(@PathVariable("productname") String productname,
+										 HttpSession session) {
+		if(session.getAttribute("orders") == null) {
+			ArrayList<Orders> orders = new ArrayList<>();
+			Orders order = new Orders(musicDAO.findById(productname), 1);
+			orders.add(order);
+			session.setAttribute("orders", orders);
+		} else {
+			ArrayList<Orders> orders = (ArrayList<Orders>) session.getAttribute("orders");
+			for(Orders o: orders) {
+				if(o.getProductname().get().getProductname().equals(productname)) {
+					o.setQuantity(o.getQuantity()+1);
+					session.setAttribute("orders", orders);
+					return new ModelAndView("music");
+				}
+			}
+			Orders order = new Orders(musicDAO.findById(productname), 1);
+			orders.add(order);
+			session.setAttribute("orders", orders);
+		}
+		return new ModelAndView("music");
+	}
+	
+	@GetMapping("/emptycart")
+	public ModelAndView emptyCart(HttpSession session) {
+		session.setAttribute("orders", null);
+		return new ModelAndView("cart");
+	}
+	
+	@GetMapping("/emptycart/{productname}")
+	public ModelAndView emptyProductFromCart(@PathVariable("productname") String productname,
+											 HttpSession session) {
+		ArrayList<Orders> orders = (ArrayList<Orders>) session.getAttribute("orders");
+		for(Orders o: orders) {
+			if(o.getProductname().get().getProductname().equals(productname)) {
+				orders.remove(o);
+				break;
+			}
+		}
+		session.setAttribute("orders", orders);
+		return new ModelAndView("cart");
+	}
+	
+	@GetMapping("/checkout/billing")
+	public ModelAndView displayCustomerBillingDetailsPage() {
+		return new ModelAndView("customerbilldetails");
+	}
+	
+	@PostMapping("/checkout/billing")
+	public ModelAndView saveCustomerBillingDetails(@RequestParam("name") String name,
+												   @RequestParam("email") String email,
+												   @RequestParam("phone") String phone,
+												   @RequestParam("billAddress") String billAddress,
+												   @RequestParam("billCity") String billCity,
+												   @RequestParam("billState") String billState,
+												   @RequestParam("billCountry") String billCountry,
+												   @RequestParam("billZipcode") String billZipcode,
+												   HttpSession session) {
+		User user = (User) session.getAttribute("user");
+		String username = user.getUsername();
+		userDAO.findById(username).get().setName(name);
+		userDAO.findById(username).get().setEmail(email);
+		userDAO.findById(username).get().setPhone(phone);
+		userDAO.findById(username).get().setBillAddress(billAddress);
+		userDAO.findById(username).get().setBillCity(billCity);
+		userDAO.findById(username).get().setBillState(billState);
+		userDAO.findById(username).get().setBillCountry(billCountry);
+		userDAO.findById(username).get().setBillZipcode(billZipcode);
+		user = userDAO.findById(username).get();
+		session.setAttribute("user", user);
+		return new ModelAndView("customershipdetails");
+	}
+	
+	@GetMapping("/checkout/shipping")
+	public ModelAndView displayCustomerShippingDetailsPage() {
+		return new ModelAndView("customershipdetails");
+	}
+	
+	@PostMapping("/checkout/shipping")
+	public ModelAndView saveCustomerShippingDetails(@RequestParam("name") String name,
+												    @RequestParam("email") String email,
+												    @RequestParam("phone") String phone,
+												    @RequestParam("shipAddress") String shipAddress,
+												    @RequestParam("shipCity") String shipCity,
+												    @RequestParam("shipState") String shipState,
+												    @RequestParam("shipCountry") String shipCountry,
+												    @RequestParam("shipZipcode") String shipZipcode,
+												    HttpSession session) {
+		User user = (User) session.getAttribute("user");
+		String username = user.getUsername();
+		userDAO.findById(username).get().setName(name);
+		userDAO.findById(username).get().setEmail(email);
+		userDAO.findById(username).get().setPhone(phone);
+		userDAO.findById(username).get().setShipAddress(shipAddress);
+		userDAO.findById(username).get().setShipCity(shipCity);
+		userDAO.findById(username).get().setShipState(shipState);
+		userDAO.findById(username).get().setShipCountry(shipCountry);
+		userDAO.findById(username).get().setShipZipcode(shipZipcode);
+		user = userDAO.findById(username).get();
+		session.setAttribute("user", user);
+		return new ModelAndView("confirmation");
+	}
+	
+	@GetMapping("/checkout/confirmation")
+	public ModelAndView displayCustomerConfirmationPage() {
+		return new ModelAndView("confirmation");
+	}
+	
+	@GetMapping("/checkout/confirmation/success")
+	public ModelAndView displayCustomerSuccessConfirmationPage() {
+		return new ModelAndView("confirmationsuccess");
+	}
+	
+	@GetMapping("/admin")
+	public ModelAndView displayAdminPage() {
+		return new ModelAndView("admin");
+	}
+	
+	@GetMapping("/admin/customermanagement")
+	public ModelAndView displayCustomerManagementPage() {
+		return new ModelAndView("customermanagement");
+	}
+	
+	@GetMapping("/admin/deleteproduct/{productname}")
+	public ModelAndView deleteMusic(@PathVariable("productname") String productname,
+									HttpSession session) {
+		musicDAO.deleteById(productname);
+		List<Music> musics = (List<Music>)musicDAO.findAll();
+		session.setAttribute("musics", musics);
+		return new ModelAndView("music");
+	}
+	
+	@GetMapping("/admin/addproduct")
+	public ModelAndView displayAddMusicPage() {
+		return new ModelAndView("add");
+	}
+	
+	@PostMapping("/admin/addproduct")
+	public ModelAndView addMusic(@RequestParam("productname") String productname,
+								 @RequestParam("category") String category,
+								 @RequestParam("quality") String quality,
+								 @RequestParam("price") String price ,
+								 @RequestParam("url") String url,
+								 HttpSession session) {
+		Music music = new Music(productname, category, quality, price, url);
+		musicDAO.save(music);
+		List<Music> musics = (List<Music>)musicDAO.findAll();
+		session.setAttribute("musics", musics);
+		return new ModelAndView("music");
+	}
+	
+	@GetMapping("/admin/editproduct/{product}")
+	public ModelAndView displayEditMusicPage(@PathVariable("product") String product,
+										     HttpSession session) {
+		Optional<Music> music = musicDAO.findById(product);
+		session.setAttribute("music", music);
+		return new ModelAndView("edit");
+	}
+	
+	@PostMapping("/admin/editproduct/{product}")
+	public ModelAndView editMusic(@PathVariable("product") String product,
+								  @RequestParam("productname") String productname,
+								  @RequestParam("category") String category,
+								  @RequestParam("quality") String quality,
+								  @RequestParam("price") String price ,
+								  @RequestParam("url") String url,
+								  HttpSession session) {
+		musicDAO.findById(product).get().setProductname(productname);
+		musicDAO.findById(product).get().setCategory(category);
+		musicDAO.findById(product).get().setQuality(quality);
+		musicDAO.findById(product).get().setPrice(price);
+		musicDAO.findById(product).get().setUrl(url);
+		Optional<Music> music = musicDAO.findById(product);
+		session.setAttribute("music", music);
+		List<Music> musics = (List<Music>)musicDAO.findAll();
+		session.setAttribute("musics", musics);
+		return new ModelAndView("music");
+	}
+}
+
+------------------------------------------------
+
+package com.music.dao;
+
+import java.util.List;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+
+import com.music.entity.Music;
+
+public interface MusicDAO extends JpaRepository<Music, String>{
+	
+}
+
+------------------------------------------------
+
+package com.music.dao;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+
+import com.music.entity.User;
+
+public interface UserDAO extends JpaRepository<User, String>{
+
+}
+
+------------------------------------------------
+
+package com.music.entity;
+
+import javax.persistence.Entity;
+import javax.persistence.Id;
+
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import lombok.ToString;
+
+@Data
+@AllArgsConstructor
+@NoArgsConstructor
+@ToString
+@Entity
+public class Music {
+	@Id
+	private String productname;
+	private String category;
+	private String quality;
+	private String price;
+	private String url;
+}
+
+------------------------------------------------
+
+package com.music.entity;
+
+import java.util.Optional;
+
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+
+@AllArgsConstructor
+@NoArgsConstructor
+public class Orders {
+	private Optional<Music> productname;
+	private int quantity;
+	
+	public Optional<Music> getProductname() {
+		return productname;
+	}
+	public void setProductname(Optional<Music> productname) {
+		this.productname = productname;
+	}
+	public int getQuantity() {
+		return quantity;
+	}
+	public void setQuantity(int quantity) {
+		this.quantity = quantity;
+	}
+}
+
+------------------------------------------------
+
+package com.music.entity;
+
+
+import javax.persistence.Entity;
+import javax.persistence.Id;
+
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+@Data
+@AllArgsConstructor
+@NoArgsConstructor
+@Entity
+public class User {
+	@Id
+	private String username;
+	private String name;
+	private String email;
+	private String phone;
+	private String password;
+	
+	private String billAddress;
+	private String billCity;
+	private String billState;
+	private String billCountry;
+	private String billZipcode;
+	
+	private String shipAddress;
+	private String shipCity;
+	private String shipState;
+	private String shipCountry;
+	private String shipZipcode;
+}
+
+------------------------------------------------
+
+spring.datasource.url=jdbc:mysql://localhost:3306/hcl
+spring.datasource.username=root
+spring.datasource.password=root
+
+spring.mvc.view.prefix=/WEB-INF/views/
+spring.mvc.view.suffix=.jsp
+
+spring.jpa.hibernate.ddl-auto=update
+
+------------------------------------------------
+
+<%@ page language="java" contentType="text/html; charset=ISO-8859-1"
+	pageEncoding="ISO-8859-1"%>
+<%@ page import="com.music.entity.User"%>	
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="ISO-8859-1">
+<link
+	href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/css/bootstrap.min.css"
+	rel="stylesheet"
+	integrity="sha384-giJF6kkoqNQ00vy+HMDP7azOuL0xtbfIcaT9wjKHr8RbDVddVHyTfAAsrekwKmP1"
+	crossorigin="anonymous">
+<script
+	src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/js/bootstrap.min.js"
+	integrity="sha384-pQQkAEnwaBkjpqZ8RU1fF1AKtTcHJwFl3pblpTlHXybJjHpMYo79HY3hIi4NKxyj"
+	crossorigin="anonymous"></script>
+<script
+	src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"
+	integrity="sha384-q2kxQ16AaE6UbzuKqyBE9/u/KzioAlnx2maXQHiDX9d4/zp8Ok3f+M7DPm+Ib6IU"
+	crossorigin="anonymous"></script>
+
+<title>Add Product</title>
+</head>
+<body>
+	<div id="app" class="container">
+		<nav class="navbar navbar-expand-md">
+			<a class="navbar-brand">Austin's Music Store</a>
+			<button class="navbar-toggler" type="button" data-toggle="collapse"
+				data-target="#navbarNav">
+				<span class="navbar-toggler-icon"></span>
+			</button>
+			<div class="collapse navbar-collapse" id="navbarNav">
+				<ul class="navbar-nav mr-auto">
+					<li class="nav-item active"><a class="nav-link" href="/">Home</a></li>
+					<li class="nav-item"><a class="nav-link" href="/music">Products</a>
+					</li>
+				</ul>
+				<%
+				User u = (User) session.getAttribute("user"); 
+				if(u != null && u.getName().equals("admin")) {
+				%>
+					<ul class="navbar-nav ms-auto">
+						<li class="nav-item"><a class="nav-link">Welcome: <%=u.getName()%></a></li>
+						<li class="nav-item"><a class="nav-link" href="/logout">Logout</a></li>
+						<li class="nav-item"><a class="nav-link" href="/admin">Admin</a></li>
+					</ul>
+				<%
+				}
+				else if(u != null) {
+				%>
+					<ul class="navbar-nav ms-auto">
+						<li class="nav-item"><a class="nav-link">Welcome: <%=u.getName()%></a></li>
+						<li class="nav-item"><a class="nav-link" href="/logout">Logout</a></li>
+						<li class="nav-item"><a class="nav-link" href="/cart">Cart</a></li>
+					</ul>
+				<%
+				} else {
+				%>
+					<ul class="navbar-nav ms-auto">
+						<li class="nav-item"><a class="nav-link" href="/login">Login</a></li>
+						<li class="nav-item"><a class="nav-link" href="/register">Register</a></li>
+					</ul>
+				<%
+				}
+				%>
+			</div>
+		</nav>
+	</div>
+
+	<div style="max-width: 750px; margin: auto; border: 1px solid black; padding: 10px; margin-top: 30px; height: 740px; position: relative;"
+		class="card text-dark bg-light mb-3">
+		<div>
+			<h1 style="margin-top: 3%"card-title">Add Product</h1>
+			<h3 style="margin-top: 3%"card-title">Please fill in product information below:</h3>
+			
+			</br>
+			
+			<form class="form-group" method="post" action="/admin/addproduct">
+				<h2 style="margin-top: 3%"card-title">Product Information</h2>
+				<label class="card-header">Product Name</label> 
+				<input class="form-control" type="text" name="productname" required="required">
+				<label class="card-header">Category</label> 
+				<input class="form-control" type="text" name="category" required="required">
+				<label class="card-header">Quality</label> 
+				<input class="form-control" type="text" name="quality" required="required">
+				<label class="card-header">Price</label> 
+				<input class="form-control" type="text" name="price" required="required">
+				<label class="card-header">Product Image URL</label> 
+				<input class="form-control" type="text" name="url" required="required">
+				
+				</br>
+				
+				<input class="btn btn-primary" type="submit" value="Add Product">
+				<a href="/music" class="btn btn-danger">Cancel</a>
+			</form>
+		</div>
+	</div>
+</body>
+</html>
+
+------------------------------------------------
+
+<%@ page language="java" contentType="text/html; charset=ISO-8859-1"
+	pageEncoding="ISO-8859-1"%>
+<%@ page import="com.music.entity.Music"%>
+<%@ page import="com.music.entity.User"%>
+<%@ page import="com.music.entity.Orders"%>
+<%@ page import="java.util.*"%>
+<%@ page import="java.math.BigDecimal"%>
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="ISO-8859-1">
+<link
+	href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/css/bootstrap.min.css"
+	rel="stylesheet"
+	integrity="sha384-giJF6kkoqNQ00vy+HMDP7azOuL0xtbfIcaT9wjKHr8RbDVddVHyTfAAsrekwKmP1"
+	crossorigin="anonymous">
+<script
+	src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"
+	integrity="sha384-q2kxQ16AaE6UbzuKqyBE9/u/KzioAlnx2maXQHiDX9d4/zp8Ok3f+M7DPm+Ib6IU"
+	crossorigin="anonymous"></script>
+<script
+	src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/js/bootstrap.min.js"
+	integrity="sha384-pQQkAEnwaBkjpqZ8RU1fF1AKtTcHJwFl3pblpTlHXybJjHpMYo79HY3hIi4NKxyj"
+	crossorigin="anonymous"></script>
+<script
+	src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.4/jquery.min.js"></script>
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.0.13/css/all.css"
+        integrity="sha384-DNOHZ68U8hZfKXOrtjWvjxusGo9WQnrNx2sqG0tfsghAvtVlRW3tvkXWZh58N9jp" crossorigin="anonymous">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+<title>Admin</title>
+</head>
+<body>
+	<div id="app" class="container">
+		<nav class="navbar navbar-expand-md">
+			<a class="navbar-brand">Austin's Music Store</a>
+			<button class="navbar-toggler" type="button" data-toggle="collapse"
+				data-target="#navbarNav">
+				<span class="navbar-toggler-icon"></span>
+			</button>
+			<div class="collapse navbar-collapse" id="navbarNav">
+				<ul class="navbar-nav mr-auto">
+					<li class="nav-item active"><a class="nav-link" href="/">Home</a></li>
+					<li class="nav-item"><a class="nav-link" href="/music">Products</a>
+					</li>
+				</ul>
+				<%
+				User u = (User) session.getAttribute("user"); 
+				if(u != null && u.getName().equals("admin")) {
+				%>
+					<ul class="navbar-nav ms-auto">
+						<li class="nav-item"><a class="nav-link">Welcome: <%=u.getName()%></a></li>
+						<li class="nav-item"><a class="nav-link" href="/logout">Logout</a></li>
+						<li class="nav-item"><a class="nav-link" href="/admin">Admin</a></li>
+					</ul>
+				<%
+				}
+				else if(u != null) {
+				%>
+					<ul class="navbar-nav ms-auto">
+						<li class="nav-item"><a class="nav-link">Welcome: <%=u.getName()%></a></li>
+						<li class="nav-item"><a class="nav-link" href="/logout">Logout</a></li>
+						<li class="nav-item"><a class="nav-link" href="/cart">Cart</a></li>
+					</ul>
+				<%
+				} else {
+				%>
+					<ul class="navbar-nav ms-auto">
+						<li class="nav-item"><a class="nav-link" href="/login">Login</a></li>
+						<li class="nav-item"><a class="nav-link" href="/register">Register</a></li>
+					</ul>
+				<%
+				}
+				%>
+			</div>
+		</nav>
+	</div>
+	
+	<div class="card text-left">
+		<div style="margin: auto;">
+			<h1>Administrator Page</h1> 
+			
+			</br>
+			
+			<h3>This is the administrator page!</h3>
+			
+			</br>
+			
+			<h4><a href="/music">Product Inventory</a> </h4>
+			Here you can view, check, and modify the product inventory!
+			
+			</br> </br>
+			
+			<h4><a href="/admin/customermanagement">Customer Management</a> </h4>
+			Here you can manage customer information!
+			
+		</div>
+	</div>
+	
+</body>
+</html>
+
+------------------------------------------------
+
+<%@ page language="java" contentType="text/html; charset=ISO-8859-1"
+	pageEncoding="ISO-8859-1"%>
+<%@ page import="com.music.entity.Music"%>
+<%@ page import="com.music.entity.User"%>
+<%@ page import="com.music.entity.Orders"%>
+<%@ page import="java.util.*"%>
+<%@ page import="java.math.BigDecimal"%>
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="ISO-8859-1">
+<link
+	href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/css/bootstrap.min.css"
+	rel="stylesheet"
+	integrity="sha384-giJF6kkoqNQ00vy+HMDP7azOuL0xtbfIcaT9wjKHr8RbDVddVHyTfAAsrekwKmP1"
+	crossorigin="anonymous">
+<script
+	src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"
+	integrity="sha384-q2kxQ16AaE6UbzuKqyBE9/u/KzioAlnx2maXQHiDX9d4/zp8Ok3f+M7DPm+Ib6IU"
+	crossorigin="anonymous"></script>
+<script
+	src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/js/bootstrap.min.js"
+	integrity="sha384-pQQkAEnwaBkjpqZ8RU1fF1AKtTcHJwFl3pblpTlHXybJjHpMYo79HY3hIi4NKxyj"
+	crossorigin="anonymous"></script>
+<script
+	src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.4/jquery.min.js"></script>
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.0.13/css/all.css"
+        integrity="sha384-DNOHZ68U8hZfKXOrtjWvjxusGo9WQnrNx2sqG0tfsghAvtVlRW3tvkXWZh58N9jp" crossorigin="anonymous">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+<title>Shopping Cart</title>
+</head>
+<body>
+	<div id="app" class="container">
+		<nav class="navbar navbar-expand-md">
+			<a class="navbar-brand">Austin's Music Store</a>
+			<button class="navbar-toggler" type="button" data-toggle="collapse"
+				data-target="#navbarNav">
+				<span class="navbar-toggler-icon"></span>
+			</button>
+			<div class="collapse navbar-collapse" id="navbarNav">
+				<ul class="navbar-nav mr-auto">
+					<li class="nav-item active"><a class="nav-link" href="/">Home</a></li>
+					<li class="nav-item"><a class="nav-link" href="/music">Products</a>
+					</li>
+				</ul>
+				<%
+				User u = (User) session.getAttribute("user"); 
+				if(u != null && u.getName().equals("admin")) {
+				%>
+					<ul class="navbar-nav ms-auto">
+						<li class="nav-item"><a class="nav-link">Welcome: <%=u.getName()%></a></li>
+						<li class="nav-item"><a class="nav-link" href="/logout">Logout</a></li>
+						<li class="nav-item"><a class="nav-link" href="/admin">Admin</a></li>
+					</ul>
+				<%
+				}
+				else if(u != null) {
+				%>
+					<ul class="navbar-nav ms-auto">
+						<li class="nav-item"><a class="nav-link">Welcome: <%=u.getName()%></a></li>
+						<li class="nav-item"><a class="nav-link" href="/logout">Logout</a></li>
+						<li class="nav-item"><a class="nav-link" href="/cart">Cart</a></li>
+					</ul>
+				<%
+				} else {
+				%>
+					<ul class="navbar-nav ms-auto">
+						<li class="nav-item"><a class="nav-link" href="/login">Login</a></li>
+						<li class="nav-item"><a class="nav-link" href="/register">Register</a></li>
+					</ul>
+				<%
+				}
+				%>
+			</div>
+		</nav>
+	</div>
+	
+	<div class="card text-left">
+		<div style="margin: auto;">
+			<h1>Cart</h1>
+			<h3>All the selected products in your shopping cart</h3>
+			
+			</br>
+			
+			<a href="/emptycart" class="btn btn-danger pull-left"><i class="fa fa-close"></i> Clear Cart</a>
+			<a href="/checkout/billing" class="btn btn-success pull-right"><i class="fa fa-shopping-cart" aria-hidden="true"></i> Check Out</a>
+			
+			<table class="table table-striped" border='2' id="myTable">
+				<tr class="table table-primary" style="text-align: center">
+					<th>Product</th>	
+					<th>Unit Price</th>	
+					<th>Quantity</th>	
+					<th>Price</th>	
+					<th>Action</th>	
+				</tr>
+				
+				<%
+				ArrayList<Orders> orders = (ArrayList<Orders>) session.getAttribute("orders");
+				BigDecimal total = new BigDecimal(0);
+				if(orders != null) {
+					for (Orders o : orders) {
+				%>
+						<tr style="text-align: center">
+							<td><%=o.getProductname().get().getProductname()%></td>
+							<td><%=o.getProductname().get().getPrice()%></td>
+							<td><%=o.getQuantity()%></td>
+							<%
+								String temp = o.getProductname().get().getPrice().replace("$","");
+								BigDecimal sPrice = new BigDecimal(temp);
+								sPrice = sPrice.multiply(new BigDecimal (o.getQuantity()));
+								total = total.add(sPrice);
+							%>
+							<td>$<%=sPrice%></td>
+							
+							<td>
+							<a href="/emptycart/<%=o.getProductname().get().getProductname()%>" class="btn btn-danger"><i class="fa fa-close"></i>Remove</a>
+							</td>
+						</tr>
+				<%
+					}
+				}	
+				%>
+				
+			</table>
+			Grand Total: $<%=total%>
+			
+			</br>
+			</br>
+			
+			<a href="/music" class="btn btn-light">Continue Shopping</a>
+		</div>
+	</div>
+	
+</body>
+</html>
+
+------------------------------------------------
+
+<%@ page language="java" contentType="text/html; charset=ISO-8859-1"
+	pageEncoding="ISO-8859-1"%>
+<%@ page import="com.music.entity.Music"%>
+<%@ page import="com.music.entity.User"%>
+<%@ page import="com.music.entity.Orders"%>
+<%@ page import="java.util.*"%>
+<%@ page import="java.math.BigDecimal"%>
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="ISO-8859-1">
+<link
+	href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/css/bootstrap.min.css"
+	rel="stylesheet"
+	integrity="sha384-giJF6kkoqNQ00vy+HMDP7azOuL0xtbfIcaT9wjKHr8RbDVddVHyTfAAsrekwKmP1"
+	crossorigin="anonymous">
+<script
+	src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"
+	integrity="sha384-q2kxQ16AaE6UbzuKqyBE9/u/KzioAlnx2maXQHiDX9d4/zp8Ok3f+M7DPm+Ib6IU"
+	crossorigin="anonymous"></script>
+<script
+	src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/js/bootstrap.min.js"
+	integrity="sha384-pQQkAEnwaBkjpqZ8RU1fF1AKtTcHJwFl3pblpTlHXybJjHpMYo79HY3hIi4NKxyj"
+	crossorigin="anonymous"></script>
+<script
+	src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.4/jquery.min.js"></script>
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.0.13/css/all.css"
+        integrity="sha384-DNOHZ68U8hZfKXOrtjWvjxusGo9WQnrNx2sqG0tfsghAvtVlRW3tvkXWZh58N9jp" crossorigin="anonymous">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+<title>Checkout Confirmation</title>
+</head>
+<body>
+	<div id="app" class="container">
+		<nav class="navbar navbar-expand-md">
+			<a class="navbar-brand">Austin's Music Store</a>
+			<button class="navbar-toggler" type="button" data-toggle="collapse"
+				data-target="#navbarNav">
+				<span class="navbar-toggler-icon"></span>
+			</button>
+			<div class="collapse navbar-collapse" id="navbarNav">
+				<ul class="navbar-nav mr-auto">
+					<li class="nav-item active"><a class="nav-link" href="/">Home</a></li>
+					<li class="nav-item"><a class="nav-link" href="/music">Products</a>
+					</li>
+				</ul>
+				<%
+				User u = (User) session.getAttribute("user"); 
+				if(u != null) {
+				%>
+					<ul class="navbar-nav ms-auto">
+						<li class="nav-item"><a class="nav-link">Welcome: <%=u.getName()%></a></li>
+						<li class="nav-item"><a class="nav-link" href="/logout">Logout</a></li>
+						<li class="nav-item"><a class="nav-link" href="/cart">Cart</a></li>
+					</ul>
+				<%
+				} else {
+				%>
+					<ul class="navbar-nav ms-auto">
+						<li class="nav-item"><a class="nav-link" href="/login">Login</a></li>
+						<li class="nav-item"><a class="nav-link" href="/register">Register</a></li>
+					</ul>
+				<%
+				}
+				%>
+			</div>
+		</nav>
+	</div>
+	
+	<div class="card text-left">
+		<div style="margin: auto;">
+			<h1>Order</h1>
+			<h3>Order Confirmation</h3>
+			
+			</br>
+			
+			<h2 style="text-align: center">Receipt</h2>
+			
+			<b>Shipping Address</b></br>
+			<%=u.getShipAddress()%> </br>
+			<%=u.getShipCity()%>, <%=u.getShipState()%> </br>
+			<%=u.getShipCountry()%>, <%=u.getShipZipcode()%> </br>
+			
+			
+			</br> </br>
+			
+			<b>Billing Address</b> </br>
+			<%=u.getBillAddress()%> </br>
+			<%=u.getBillCity()%>, <%=u.getBillState()%> </br>
+			<%=u.getBillCountry()%>, <%=u.getBillZipcode()%> </br>
+			
+			</br>
+			
+			<table class="table table-striped" border='2' id="myTable">
+				<tr class="table table-primary" style="text-align: center">
+					<th>Product</th>	
+					<th>Unit Price</th>	
+					<th>Quantity</th>	
+					<th>Price</th>	
+				</tr>
+				
+				<%
+				ArrayList<Orders> orders = (ArrayList<Orders>) session.getAttribute("orders");
+				BigDecimal total = new BigDecimal(0);
+				if(orders != null) {
+					for (Orders o : orders) {
+				%>
+						<tr style="text-align: center">
+							<td><%=o.getProductname().get().getProductname()%></td>
+							<td><%=o.getProductname().get().getPrice()%></td>
+							<td><%=o.getQuantity()%></td>
+							<%
+								String temp = o.getProductname().get().getPrice().replace("$","");
+								BigDecimal sPrice = new BigDecimal(temp);
+								sPrice = sPrice.multiply(new BigDecimal (o.getQuantity()));
+								total = total.add(sPrice);
+							%>
+							<td>$<%=sPrice%></td>
+							
+						</tr>
+				<%
+					}
+				}	
+				%>
+				
+			</table>
+			<h4>Grand Total: $<%=total%></h4>
+			
+			</br>
+			</br>
+			<a href="/checkout/shipping" class="btn btn-secondary">Back</a>
+			<a href="/checkout/confirmation/success" class="btn btn-success">Submit Order</a>
+			<a href="/cart" class="btn btn-secondary">Cancel</a>
+		</div>
+	</div>
+	
+</body>
+</html>
+
+------------------------------------------------
+
+<%@ page language="java" contentType="text/html; charset=ISO-8859-1"
+	pageEncoding="ISO-8859-1"%>
+<%@ page import="com.music.entity.Music"%>
+<%@ page import="com.music.entity.User"%>
+<%@ page import="com.music.entity.Orders"%>
+<%@ page import="java.util.*"%>
+<%@ page import="java.math.BigDecimal"%>
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="ISO-8859-1">
+<link
+	href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/css/bootstrap.min.css"
+	rel="stylesheet"
+	integrity="sha384-giJF6kkoqNQ00vy+HMDP7azOuL0xtbfIcaT9wjKHr8RbDVddVHyTfAAsrekwKmP1"
+	crossorigin="anonymous">
+<script
+	src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"
+	integrity="sha384-q2kxQ16AaE6UbzuKqyBE9/u/KzioAlnx2maXQHiDX9d4/zp8Ok3f+M7DPm+Ib6IU"
+	crossorigin="anonymous"></script>
+<script
+	src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/js/bootstrap.min.js"
+	integrity="sha384-pQQkAEnwaBkjpqZ8RU1fF1AKtTcHJwFl3pblpTlHXybJjHpMYo79HY3hIi4NKxyj"
+	crossorigin="anonymous"></script>
+<script
+	src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.4/jquery.min.js"></script>
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.0.13/css/all.css"
+        integrity="sha384-DNOHZ68U8hZfKXOrtjWvjxusGo9WQnrNx2sqG0tfsghAvtVlRW3tvkXWZh58N9jp" crossorigin="anonymous">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+<title>Checkout Success</title>
+</head>
+<body>
+	<div id="app" class="container">
+		<nav class="navbar navbar-expand-md">
+			<a class="navbar-brand">Austin's Music Store</a>
+			<button class="navbar-toggler" type="button" data-toggle="collapse"
+				data-target="#navbarNav">
+				<span class="navbar-toggler-icon"></span>
+			</button>
+			<div class="collapse navbar-collapse" id="navbarNav">
+				<ul class="navbar-nav mr-auto">
+					<li class="nav-item active"><a class="nav-link" href="/">Home</a></li>
+					<li class="nav-item"><a class="nav-link" href="/music">Products</a>
+					</li>
+				</ul>
+				<%
+				User u = (User) session.getAttribute("user"); 
+				if(u != null) {
+				%>
+					<ul class="navbar-nav ms-auto">
+						<li class="nav-item"><a class="nav-link">Welcome: <%=u.getName()%></a></li>
+						<li class="nav-item"><a class="nav-link" href="/logout">Logout</a></li>
+						<li class="nav-item"><a class="nav-link" href="/cart">Cart</a></li>
+					</ul>
+				<%
+				} else {
+				%>
+					<ul class="navbar-nav ms-auto">
+						<li class="nav-item"><a class="nav-link" href="/login">Login</a></li>
+						<li class="nav-item"><a class="nav-link" href="/register">Register</a></li>
+					</ul>
+				<%
+				}
+				%>
+			</div>
+		</nav>
+	</div>
+	
+	<div class="card text-left">
+		<div style="margin: auto;">
+			<h1>Thank you for your business!</h1> 
+			
+			</br>
+			
+			<h3>Your order will be delivered to you within three business days!</h3>
+			
+			</br>
+			
+			<a href="/" class="btn btn-primary">OK</a>
+			
+		</div>
+	</div>
+	
+</body>
+</html>
+
+------------------------------------------------
+
+<%@ page language="java" contentType="text/html; charset=ISO-8859-1"
+	pageEncoding="ISO-8859-1"%>
+<%@ page import="com.music.entity.User"%>
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="ISO-8859-1">
+<link
+	href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/css/bootstrap.min.css"
+	rel="stylesheet"
+	integrity="sha384-giJF6kkoqNQ00vy+HMDP7azOuL0xtbfIcaT9wjKHr8RbDVddVHyTfAAsrekwKmP1"
+	crossorigin="anonymous">
+<script
+	src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/js/bootstrap.min.js"
+	integrity="sha384-pQQkAEnwaBkjpqZ8RU1fF1AKtTcHJwFl3pblpTlHXybJjHpMYo79HY3hIi4NKxyj"
+	crossorigin="anonymous"></script>
+<script
+	src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"
+	integrity="sha384-q2kxQ16AaE6UbzuKqyBE9/u/KzioAlnx2maXQHiDX9d4/zp8Ok3f+M7DPm+Ib6IU"
+	crossorigin="anonymous"></script>
+
+<title>Checkout Billing</title>
+</head>
+<body>
+	<div id="app" class="container">
+		<nav class="navbar navbar-expand-md">
+			<a class="navbar-brand">Austin's Music Store</a>
+			<button class="navbar-toggler" type="button" data-toggle="collapse"
+				data-target="#navbarNav">
+				<span class="navbar-toggler-icon"></span>
+			</button>
+			<div class="collapse navbar-collapse" id="navbarNav">
+				<ul class="navbar-nav mr-auto">
+					<li class="nav-item active"><a class="nav-link" href="/">Home</a></li>
+					<li class="nav-item"><a class="nav-link" href="/music">Products</a>
+					</li>
+				</ul>
+				<%
+				User u = (User) session.getAttribute("user"); 
+				if(u != null) {
+				%>
+					<ul class="navbar-nav ms-auto">
+						<li class="nav-item"><a class="nav-link">Welcome: <%=u.getName()%></a></li>
+						<li class="nav-item"><a class="nav-link" href="/logout">Logout</a></li>
+						<li class="nav-item"><a class="nav-link" href="/cart">Cart</a></li>
+					</ul>
+				<%
+				} else {
+				%>
+					<ul class="navbar-nav ms-auto">
+						<li class="nav-item"><a class="nav-link" href="/login">Login</a></li>
+						<li class="nav-item"><a class="nav-link" href="/register">Register</a></li>
+					</ul>
+				<%
+				}
+				%>
+			</div>
+		</nav>
+	</div>
+
+	<div style="max-width: 750px; margin: auto; border: 1px solid black; padding: 10px; margin-top: 30px; height: 970px; position: relative;"
+		class="card text-dark bg-light mb-3">
+		<div>
+			<h1 style="margin-top: 3%"card-title">Customer</h1>
+			<h3 style="margin-top: 3%"card-title">Customer Details</h3>
+			
+			</br>
+			<form class="form-group" method="post" action="/checkout/billing">
+				<h2 style="margin-top: 3%"card-title">Customer Billing Details</h2>
+				<label class="card-header">Name</label> 
+				<input class="form-control" type="text" name="name" required="required" value="<%=u.getName()%>">
+				<label class="card-header">Email</label> 
+				<input class="form-control" type="text" name="email" required="required" value="<%=u.getEmail()%>">
+				<label class="card-header">Phone</label> 
+				<input class="form-control" type="text" name="phone" required="required" value="<%=u.getPhone()%>">
+				<label class="card-header">Street Name & Apartment No.</label> 
+				<input class="form-control" type="text" name="billAddress" required="required" value="<%=u.getBillAddress()%>">
+				<label class="card-header">City</label> 
+				<input class="form-control" type="text" name="billCity" required="required" value="<%=u.getBillCity()%>">
+				<label class="card-header">State</label> 
+				<input class="form-control" type="text" name="billState" required="required" value="<%=u.getBillState()%>">
+				<label class="card-header">Country</label> 
+				<input class="form-control" type="text" name="billCountry" required="required" value="<%=u.getBillCountry()%>">
+				<label class="card-header">Zipcode</label> 
+				<input class="form-control" type="text" name="billZipcode" required="required" value="<%=u.getBillZipcode()%>">
+				
+				</br>
+				
+				<input class="btn btn-primary" type="submit" value="Next">
+				<a href="/cart" class="btn btn-secondary">Cancel</a>
+			</form>
+		</div>
+	</div>
+</body>
+</html>
+
+------------------------------------------------
+
+<%@ page language="java" contentType="text/html; charset=ISO-8859-1"
+	pageEncoding="ISO-8859-1"%>
+<%@ page import="com.music.entity.Music"%>
+<%@ page import="com.music.entity.User"%>
+<%@ page import="java.util.*"%>
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="ISO-8859-1">
+<link
+	href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/css/bootstrap.min.css"
+	rel="stylesheet"
+	integrity="sha384-giJF6kkoqNQ00vy+HMDP7azOuL0xtbfIcaT9wjKHr8RbDVddVHyTfAAsrekwKmP1"
+	crossorigin="anonymous">
+<script
+	src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"
+	integrity="sha384-q2kxQ16AaE6UbzuKqyBE9/u/KzioAlnx2maXQHiDX9d4/zp8Ok3f+M7DPm+Ib6IU"
+	crossorigin="anonymous"></script>
+<script
+	src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/js/bootstrap.min.js"
+	integrity="sha384-pQQkAEnwaBkjpqZ8RU1fF1AKtTcHJwFl3pblpTlHXybJjHpMYo79HY3hIi4NKxyj"
+	crossorigin="anonymous"></script>
+<title>Admin: Customer Management</title>
+</head>
+<body>
+	<div id="app" class="container">
+		<nav class="navbar navbar-expand-md">
+			<a class="navbar-brand">Austin's Music Store</a>
+			<button class="navbar-toggler" type="button" data-toggle="collapse"
+				data-target="#navbarNav">
+				<span class="navbar-toggler-icon"></span>
+			</button>
+			<div class="collapse navbar-collapse" id="navbarNav">
+				<ul class="navbar-nav mr-auto">
+					<li class="nav-item active"><a class="nav-link" href="/">Home</a></li>
+					<li class="nav-item"><a class="nav-link" href="/music">Products</a>
+					</li>
+				</ul>
+				<%
+				User u = (User) session.getAttribute("user"); 
+				if(u != null && u.getName().equals("admin")) {
+				%>
+					<ul class="navbar-nav ms-auto">
+						<li class="nav-item"><a class="nav-link">Welcome: <%=u.getName()%></a></li>
+						<li class="nav-item"><a class="nav-link" href="/logout">Logout</a></li>
+						<li class="nav-item"><a class="nav-link" href="/admin">Admin</a></li>
+					</ul>
+				<%
+				}
+				else if(u != null) {
+				%>
+					<ul class="navbar-nav ms-auto">
+						<li class="nav-item"><a class="nav-link">Welcome: <%=u.getName()%></a></li>
+						<li class="nav-item"><a class="nav-link" href="/logout">Logout</a></li>
+						<li class="nav-item"><a class="nav-link" href="/cart">Cart</a></li>
+					</ul>
+				<%
+				} else {
+				%>
+					<ul class="navbar-nav ms-auto">
+						<li class="nav-item"><a class="nav-link" href="/login">Login</a></li>
+						<li class="nav-item"><a class="nav-link" href="/register">Register</a></li>
+					</ul>
+				<%
+				}
+				%>
+			</div>
+		</nav>
+	</div>
+	
+	<div class="card text-left">
+		<div style="margin: auto;">
+			<h1>Customer Management Page</h1>
+			<h3>This is the customer management page!</h3>
+			
+			</br>
+			
+			<table class="table table-striped" border='2' id="myTable">
+				<tr class="table table-primary" style="text-align: center">
+					<th>Name</th>	
+					<th>Email</th>	
+					<th>Phone</th>	
+					<th>Username</th>	
+					<th>Password</th>
+					<th>Enabled</th>		
+				</tr>
+				
+				<%
+				ArrayList<User> users = (ArrayList<User>) session.getAttribute("users");
+				for (User us : users) {
+				%>
+					<tr style="text-align: center">
+						<td><%=us.getName()%></td>
+						<td><%=us.getEmail()%></td>
+						<td><%=us.getPhone()%></td>
+						<td><%=us.getUsername()%></td>
+						<td><%=us.getPassword()%></td>
+						<td>False</td>
+					</tr>
+				<%}%>
+			</table>
+			
+		</div>
+	</div>
+	
+	<script>
+		function myFunction() {
+			var input, filter, table, tr, td, i, txtValue;
+			input = document.getElementById("myInput");
+			filter = input.value.toUpperCase();
+			table = document.getElementById("myTable");
+			tr = table.getElementsByTagName("tr");
+			for (i = 0; i < tr.length; i++) {
+				td = tr[i].getElementsByTagName("td")[1];
+				if (td) {
+					txtValue = td.textContent || td.innerText;
+					if (txtValue.toUpperCase().indexOf(filter) > -1) {
+						tr[i].style.display = "";
+					} else {
+						tr[i].style.display = "none";
+					}
+				}
+			}
+		}
+	</script>
+</body>
+</html>
+
+------------------------------------------------
+
+<%@ page language="java" contentType="text/html; charset=ISO-8859-1"
+	pageEncoding="ISO-8859-1"%>
+<%@ page import="com.music.entity.User"%>
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="ISO-8859-1">
+<link
+	href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/css/bootstrap.min.css"
+	rel="stylesheet"
+	integrity="sha384-giJF6kkoqNQ00vy+HMDP7azOuL0xtbfIcaT9wjKHr8RbDVddVHyTfAAsrekwKmP1"
+	crossorigin="anonymous">
+<script
+	src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/js/bootstrap.min.js"
+	integrity="sha384-pQQkAEnwaBkjpqZ8RU1fF1AKtTcHJwFl3pblpTlHXybJjHpMYo79HY3hIi4NKxyj"
+	crossorigin="anonymous"></script>
+<script
+	src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"
+	integrity="sha384-q2kxQ16AaE6UbzuKqyBE9/u/KzioAlnx2maXQHiDX9d4/zp8Ok3f+M7DPm+Ib6IU"
+	crossorigin="anonymous"></script>
+
+<title>Checkout Shipping</title>
+</head>
+<body>
+	<div id="app" class="container">
+		<nav class="navbar navbar-expand-md">
+			<a class="navbar-brand">Austin's Music Store</a>
+			<button class="navbar-toggler" type="button" data-toggle="collapse"
+				data-target="#navbarNav">
+				<span class="navbar-toggler-icon"></span>
+			</button>
+			<div class="collapse navbar-collapse" id="navbarNav">
+				<ul class="navbar-nav mr-auto">
+					<li class="nav-item active"><a class="nav-link" href="/">Home</a></li>
+					<li class="nav-item"><a class="nav-link" href="/music">Products</a>
+					</li>
+				</ul>
+				<%
+				User u = (User) session.getAttribute("user"); 
+				if(u != null) {
+				%>
+					<ul class="navbar-nav ms-auto">
+						<li class="nav-item"><a class="nav-link">Welcome: <%=u.getName()%></a></li>
+						<li class="nav-item"><a class="nav-link" href="/logout">Logout</a></li>
+						<li class="nav-item"><a class="nav-link" href="/cart">Cart</a></li>
+					</ul>
+				<%
+				} else {
+				%>
+					<ul class="navbar-nav ms-auto">
+						<li class="nav-item"><a class="nav-link" href="/login">Login</a></li>
+						<li class="nav-item"><a class="nav-link" href="/register">Register</a></li>
+					</ul>
+				<%
+				}
+				%>
+			</div>
+		</nav>
+	</div>
+
+	<div style="max-width: 750px; margin: auto; border: 1px solid black; padding: 10px; margin-top: 30px; height: 970px; position: relative;"
+		class="card text-dark bg-light mb-3">
+		<div>
+			<h1 style="margin-top: 3%"card-title">Customer</h1>
+			<h3 style="margin-top: 3%"card-title">Customer Details</h3>
+			
+			</br>
+			<form class="form-group" method="post" action="/checkout/shipping">
+				<h2 style="margin-top: 3%"card-title">Customer Shipping Details</h2>
+				<label class="card-header">Name</label> 
+				<input class="form-control" type="text" name="name" required="required" value="<%=u.getName()%>">
+				<label class="card-header">Email</label> 
+				<input class="form-control" type="text" name="email" required="required" value="<%=u.getEmail()%>">
+				<label class="card-header">Phone</label> 
+				<input class="form-control" type="text" name="phone" required="required" value="<%=u.getPhone()%>">
+				<label class="card-header">Street Name & Apartment No.</label> 
+				<input class="form-control" type="text" name="shipAddress" required="required" value="<%=u.getShipAddress()%>">
+				<label class="card-header">City</label> 
+				<input class="form-control" type="text" name="shipCity" required="required" value="<%=u.getShipCity()%>">
+				<label class="card-header">State</label> 
+				<input class="form-control" type="text" name="shipState" required="required" value="<%=u.getShipState()%>">
+				<label class="card-header">Country</label> 
+				<input class="form-control" type="text" name="shipCountry" required="required" value="<%=u.getShipCountry()%>">
+				<label class="card-header">Zipcode</label> 
+				<input class="form-control" type="text" name="shipZipcode" required="required" value="<%=u.getShipZipcode()%>">
+				
+				</br>
+				
+				<a href="/checkout/billing" class="btn btn-secondary">Back</a>
+				<input class="btn btn-primary" type="submit" value="Confirm Order">
+			</form>
+		</div>
+	</div>
+</body>
+</html>
+
+------------------------------------------------
+
+<%@ page language="java" contentType="text/html; charset=ISO-8859-1"
+	pageEncoding="ISO-8859-1"%>
+<%@ page import="com.music.entity.User"%>	
+<%@ page import="com.music.entity.Music"%>
+<%@ page import="java.util.Optional"%>
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="ISO-8859-1">
+<link
+	href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/css/bootstrap.min.css"
+	rel="stylesheet"
+	integrity="sha384-giJF6kkoqNQ00vy+HMDP7azOuL0xtbfIcaT9wjKHr8RbDVddVHyTfAAsrekwKmP1"
+	crossorigin="anonymous">
+<script
+	src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/js/bootstrap.min.js"
+	integrity="sha384-pQQkAEnwaBkjpqZ8RU1fF1AKtTcHJwFl3pblpTlHXybJjHpMYo79HY3hIi4NKxyj"
+	crossorigin="anonymous"></script>
+<script
+	src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"
+	integrity="sha384-q2kxQ16AaE6UbzuKqyBE9/u/KzioAlnx2maXQHiDX9d4/zp8Ok3f+M7DPm+Ib6IU"
+	crossorigin="anonymous"></script>
+
+<title>Edit Product</title>
+</head>
+<body>
+	<div id="app" class="container">
+		<nav class="navbar navbar-expand-md">
+			<a class="navbar-brand">Austin's Music Store</a>
+			<button class="navbar-toggler" type="button" data-toggle="collapse"
+				data-target="#navbarNav">
+				<span class="navbar-toggler-icon"></span>
+			</button>
+			<div class="collapse navbar-collapse" id="navbarNav">
+				<ul class="navbar-nav mr-auto">
+					<li class="nav-item active"><a class="nav-link" href="/">Home</a></li>
+					<li class="nav-item"><a class="nav-link" href="/music">Products</a>
+					</li>
+				</ul>
+				<%
+				User u = (User) session.getAttribute("user"); 
+				if(u != null && u.getName().equals("admin")) {
+				%>
+					<ul class="navbar-nav ms-auto">
+						<li class="nav-item"><a class="nav-link">Welcome: <%=u.getName()%></a></li>
+						<li class="nav-item"><a class="nav-link" href="/logout">Logout</a></li>
+						<li class="nav-item"><a class="nav-link" href="/admin">Admin</a></li>
+					</ul>
+				<%
+				}
+				else if(u != null) {
+				%>
+					<ul class="navbar-nav ms-auto">
+						<li class="nav-item"><a class="nav-link">Welcome: <%=u.getName()%></a></li>
+						<li class="nav-item"><a class="nav-link" href="/logout">Logout</a></li>
+						<li class="nav-item"><a class="nav-link" href="/cart">Cart</a></li>
+					</ul>
+				<%
+				} else {
+				%>
+					<ul class="navbar-nav ms-auto">
+						<li class="nav-item"><a class="nav-link" href="/login">Login</a></li>
+						<li class="nav-item"><a class="nav-link" href="/register">Register</a></li>
+					</ul>
+				<%
+				}
+				%>
+			</div>
+		</nav>
+	</div>
+
+	<div style="max-width: 750px; margin: auto; border: 1px solid black; padding: 10px; margin-top: 30px; height: 740px; position: relative;"
+		class="card text-dark bg-light mb-3">
+		<div>
+			<h1 style="margin-top: 3%"card-title">Edit Product</h1>
+			<h3 style="margin-top: 3%"card-title">Please fill in product information below:</h3>
+			
+			</br>
+			
+			<%Optional<Music> music = (Optional<Music>) session.getAttribute("music");%>
+			<form class="form-group" method="post" action="/admin/editproduct/<%=music.get().getProductname()%>">
+				<h2 style="margin-top: 3%"card-title">Product Information</h2>
+				<label class="card-header">Product Name</label> 
+				<input class="form-control" type="text" name="productname" required="required" value="<%=music.get().getProductname()%>">
+				<label class="card-header">Category</label> 
+				<input class="form-control" type="text" name="category" required="required" value="<%=music.get().getCategory()%>">
+				<label class="card-header">Quality</label> 
+				<input class="form-control" type="text" name="quality" required="required" value="<%=music.get().getQuality()%>">
+				<label class="card-header">Price</label> 
+				<input class="form-control" type="text" name="price" required="required" value="<%=music.get().getPrice()%>">
+				<label class="card-header">Product Image URL</label> 
+				<input class="form-control" type="text" name="url" required="required" value="<%=music.get().getUrl()%>">
+				
+				</br>
+				
+				<input class="btn btn-primary" type="submit" value="Save">
+				<a href="/music" class="btn btn-danger">Cancel</a>
+			</form>
+		</div>
+	</div>
+</body>
+</html>
+
+------------------------------------------------
+
+<%@ page language="java" contentType="text/html; charset=ISO-8859-1"
+	pageEncoding="ISO-8859-1"%>
+<%@ page import="com.music.entity.Music"%>
+<%@ page import="com.music.entity.User"%>
+<%@ page import="java.util.*"%>
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="ISO-8859-1">
+<script
+	src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"
+	integrity="sha384-q2kxQ16AaE6UbzuKqyBE9/u/KzioAlnx2maXQHiDX9d4/zp8Ok3f+M7DPm+Ib6IU"
+	crossorigin="anonymous"></script>
+<link
+	href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/css/bootstrap.min.css"
+	rel="stylesheet"
+	integrity="sha384-giJF6kkoqNQ00vy+HMDP7azOuL0xtbfIcaT9wjKHr8RbDVddVHyTfAAsrekwKmP1"
+	crossorigin="anonymous">
+<script
+	src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/js/bootstrap.min.js"
+	integrity="sha384-pQQkAEnwaBkjpqZ8RU1fF1AKtTcHJwFl3pblpTlHXybJjHpMYo79HY3hIi4NKxyj"
+	crossorigin="anonymous"></script>
+
+<title>Products</title>
+</head>
+<body>
+	<div id="app" class="container">
+		<nav class="navbar navbar-expand-md">
+			<a class="navbar-brand">Austin's Music Store</a>
+			<button class="navbar-toggler" type="button" data-toggle="collapse"
+				data-target="#navbarNav">
+				<span class="navbar-toggler-icon"></span>
+			</button>
+			<div class="collapse navbar-collapse" id="navbarNav">
+				<ul class="navbar-nav mr-auto">
+					<li class="nav-item active"><a class="nav-link" href="/">Home</a></li>
+					<li class="nav-item"><a class="nav-link" href="/music">Products</a>
+					</li>
+				</ul>
+				<%
+				User u = (User) session.getAttribute("user"); 
+				if(u != null && u.getName().equals("admin")) {
+				%>
+					<ul class="navbar-nav ms-auto">
+						<li class="nav-item"><a class="nav-link">Welcome: <%=u.getName()%></a></li>
+						<li class="nav-item"><a class="nav-link" href="/logout">Logout</a></li>
+						<li class="nav-item"><a class="nav-link" href="/admin">Admin</a></li>
+					</ul>
+				<%
+				}
+				else if(u != null) {
+				%>
+					<ul class="navbar-nav ms-auto">
+						<li class="nav-item"><a class="nav-link">Welcome: <%=u.getName()%></a></li>
+						<li class="nav-item"><a class="nav-link" href="/logout">Logout</a></li>
+						<li class="nav-item"><a class="nav-link" href="/cart">Cart</a></li>
+					</ul>
+				<%
+				} else {
+				%>
+					<ul class="navbar-nav ms-auto">
+						<li class="nav-item"><a class="nav-link" href="/login">Login</a></li>
+						<li class="nav-item"><a class="nav-link" href="/register">Register</a></li>
+					</ul>
+				<%
+				}
+				%>
+			</div>
+		</nav>
+	</div>
+	
+	<div class="card text-left">
+		<div style="margin: auto;">
+			<h1>All Products</h1>
+			<h3>Checkout all the awesome products available now!</h3>
+			
+			Search: <input type="text" id="myInput" onkeyup="myFunction()" placeholder="Product name..." title="Type in a name">
+			
+			<table class="table table-striped" border='2' id="myTable">
+				<tr class="table table-primary" style="text-align: center">
+					<th>Photo Thumb</th>	
+					<th>Product Name</th>	
+					<th>Category</th>	
+					<th>Condition</th>	
+					<th>Price</th>	
+					<th> </th>
+				</tr>
+				
+				<%
+				ArrayList<Music> musics = (ArrayList<Music>) session.getAttribute("musics");
+				for (Music m : musics) {
+				%>
+					<tr style="text-align: center">
+						<td> <img style="width: 75px; height: 75px" src="<%=m.getUrl()%>" alt="song image" /> </td>
+						<td><%=m.getProductname()%></td>
+						<td><%=m.getCategory()%></td>
+						<td><%=m.getQuality()%></td>
+						<td><%=m.getPrice()%></td>
+						<td>
+							<a href="/music/<%=m.getProductname()%>">
+								<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-info-circle" viewBox="0 0 16 16">
+	  								<path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
+	  								<path d="M8.93 6.588l-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533L8.93 6.588zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0z"/>
+								</svg>
+							</a>
+						</td>
+					</tr>
+				<%}%>
+			</table>
+			
+		</div>
+	</div>
+	
+	<script>
+		function myFunction() {
+			var input, filter, table, tr, td, i, txtValue;
+			input = document.getElementById("myInput");
+			filter = input.value.toUpperCase();
+			table = document.getElementById("myTable");
+			tr = table.getElementsByTagName("tr");
+			for (i = 0; i < tr.length; i++) {
+				td = tr[i].getElementsByTagName("td")[1];
+				if (td) {
+					txtValue = td.textContent || td.innerText;
+					if (txtValue.toUpperCase().indexOf(filter) > -1) {
+						tr[i].style.display = "";
+					} else {
+						tr[i].style.display = "none";
+					}
+				}
+			}
+		}
+	</script>
+</body>
+</html>
+
+------------------------------------------------
+
+<%@ page language="java" contentType="text/html; charset=ISO-8859-1"
+	pageEncoding="ISO-8859-1"%>
+<%@ page import="com.music.entity.Music"%>
+<%@ page import="com.music.entity.User"%>
+<%@ page import="java.util.*"%>
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="ISO-8859-1">
+<link
+	href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/css/bootstrap.min.css"
+	rel="stylesheet"
+	integrity="sha384-giJF6kkoqNQ00vy+HMDP7azOuL0xtbfIcaT9wjKHr8RbDVddVHyTfAAsrekwKmP1"
+	crossorigin="anonymous">
+<script
+	src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"
+	integrity="sha384-q2kxQ16AaE6UbzuKqyBE9/u/KzioAlnx2maXQHiDX9d4/zp8Ok3f+M7DPm+Ib6IU"
+	crossorigin="anonymous"></script>
+<script
+	src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/js/bootstrap.min.js"
+	integrity="sha384-pQQkAEnwaBkjpqZ8RU1fF1AKtTcHJwFl3pblpTlHXybJjHpMYo79HY3hIi4NKxyj"
+	crossorigin="anonymous"></script>
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.0.13/css/all.css"
+        integrity="sha384-DNOHZ68U8hZfKXOrtjWvjxusGo9WQnrNx2sqG0tfsghAvtVlRW3tvkXWZh58N9jp" crossorigin="anonymous">
+<%Optional<Music> music = (Optional<Music>) session.getAttribute("music");%>
+<title>Product:<%=music.get().getProductname()%></title>
+</head>
+<body>
+	<div id="app" class="container">
+		<nav class="navbar navbar-expand-md">
+			<a class="navbar-brand">Austin's Music Store</a>
+			<button class="navbar-toggler" type="button" data-toggle="collapse"
+				data-target="#navbarNav">
+				<span class="navbar-toggler-icon"></span>
+			</button>
+			<div class="collapse navbar-collapse" id="navbarNav">
+				<ul class="navbar-nav mr-auto">
+					<li class="nav-item active"><a class="nav-link" href="/">Home</a></li>
+					<li class="nav-item"><a class="nav-link" href="/music">Products</a>
+					</li>
+				</ul>
+				<%
+				User u = (User) session.getAttribute("user"); 
+				if(u != null && u.getName().equals("admin")) {
+				%>
+					<ul class="navbar-nav ms-auto">
+						<li class="nav-item"><a class="nav-link">Welcome: <%=u.getName()%></a></li>
+						<li class="nav-item"><a class="nav-link" href="/logout">Logout</a></li>
+						<li class="nav-item"><a class="nav-link" href="/admin">Admin</a></li>
+					</ul>
+				<%
+				}
+				else if(u != null) {
+				%>
+					<ul class="navbar-nav ms-auto">
+						<li class="nav-item"><a class="nav-link">Welcome: <%=u.getName()%></a></li>
+						<li class="nav-item"><a class="nav-link" href="/logout">Logout</a></li>
+						<li class="nav-item"><a class="nav-link" href="/cart">Cart</a></li>
+					</ul>
+				<%
+				} else {
+				%>
+					<ul class="navbar-nav ms-auto">
+						<li class="nav-item"><a class="nav-link" href="/login">Login</a></li>
+						<li class="nav-item"><a class="nav-link" href="/register">Register</a></li>
+					</ul>
+				<%
+				}
+				%>
+			</div>
+		</nav>
+	</div>
+
+	<div class="card text-left">
+		<div style="margin: auto;">
+			<h1>Product Detail</h1>
+			<h3>Here is the detail information of the product!</h3>
+		
+			</br>
+
+			<img style="width: 250px; height: 250px; float: left" src="<%=music.get().getUrl()%>" alt="song image"/>
+			<h2><%=music.get().getProductname()%></h2>
+			<b>Category:</b> <%=music.get().getCategory()%> </br>
+			<b>Condition:</b> <%=music.get().getQuality()%>
+			<h4><%=music.get().getPrice()%> </br></h4>
+			<a href="/music" class="btn btn-light">Back</a>
+			<a href="/addcart/<%=music.get().getProductname()%>" class="btn btn-warning"><i class="fa fa-shopping-cart" aria-hidden="true"></i> Order Now</a>
+		</div>
+	</div>
+</body>
+</html>
+
+------------------------------------------------
+
+<%@ page language="java" contentType="text/html; charset=ISO-8859-1"
+	pageEncoding="ISO-8859-1"%>
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="ISO-8859-1">
+<link
+	href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/css/bootstrap.min.css"
+	rel="stylesheet"
+	integrity="sha384-giJF6kkoqNQ00vy+HMDP7azOuL0xtbfIcaT9wjKHr8RbDVddVHyTfAAsrekwKmP1"
+	crossorigin="anonymous">
+<script
+	src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/js/bootstrap.min.js"
+	integrity="sha384-pQQkAEnwaBkjpqZ8RU1fF1AKtTcHJwFl3pblpTlHXybJjHpMYo79HY3hIi4NKxyj"
+	crossorigin="anonymous"></script>
+<script
+	src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"
+	integrity="sha384-q2kxQ16AaE6UbzuKqyBE9/u/KzioAlnx2maXQHiDX9d4/zp8Ok3f+M7DPm+Ib6IU"
+	crossorigin="anonymous"></script>
+
+<title>Login</title>
+</head>
+<body>
+	<div id="app" class="container">
+		<nav class="navbar navbar-expand-md">
+			<a class="navbar-brand">Austin's Music Store</a>
+			<button class="navbar-toggler" type="button" data-toggle="collapse"
+				data-target="#navbarNav">
+				<span class="navbar-toggler-icon"></span>
+			</button>
+			<div class="collapse navbar-collapse" id="navbarNav">
+				<ul class="navbar-nav mr-auto">
+					<li class="nav-item active"><a class="nav-link" href="/">Home</a></li>
+					<li class="nav-item"><a class="nav-link" href="/music">Products</a>
+					</li>
+				</ul>
+				<ul class="navbar-nav ms-auto">
+					<li class="nav-item"><a class="nav-link"
+						href="/login">Login</a></li>
+					<li class="nav-item"><a class="nav-link"
+						href="/register">Register</a></li>
+				</ul>
+			</div>
+		</nav>
+	</div>
+	
+	<div style="max-width: 500px; margin: auto; border: 1px solid black; padding: 10px; margin-top: 30px; height: 360px; position: relative;"
+		class="card text-dark bg-light mb-3">
+		<div>
+			<h2 style="margin-top: 2%"card-title">Login with Username and Password</h2>
+			<form class="form-group" method="post" action="login">
+				<label class="card-header">Username</label> 
+				<input class="form-control" type="text" name="username" required="required">
+				<label class="card-header">Password</label> 
+				<input class="form-control" type="password" name="password" required="required">
+				</br> 
+				<input class="btn btn-primary" type="submit" value="Login">
+			</form>
+		</div>
+	</div>
+</body>
+</html>
+
+------------------------------------------------
+
+<!DOCTYPE html>
+<html lang="en">
+<%@ page import="com.music.entity.User"%>
+<%@ page import="java.util.*"%>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Main</title>
+
+<script src="https://code.jquery.com/jquery-3.3.1.slim.min.js"
+	integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo"
+	crossorigin="anonymous">
+	
+</script>
+<script
+	src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js"
+	integrity="sha384-UO2eT0CpHqdSJQ6hJty5KVphtPhzWj9WO1clHTMGa3JDZwrnQq4sF86dIHNDz0W1"
+	crossorigin="anonymous">
+	
+</script>
+<link rel="stylesheet"
+	href="https://use.fontawesome.com/releases/v5.0.13/css/all.css"
+	integrity="sha384-DNOHZ68U8hZfKXOrtjWvjxusGo9WQnrNx2sqG0tfsghAvtVlRW3tvkXWZh58N9jp"
+	crossorigin="anonymous">
+<script
+	src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js"
+	integrity="sha384-JjSmVgyd0p3pXB1rRibZUAYoIIy6OrQ6VrjIEaFf/nJGzIxFDsf4x0xIM+B07jRM"
+	crossorigin="anonymous">
+	
+</script>
+<link
+	href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/css/bootstrap.min.css"
+	rel="stylesheet"
+	integrity="sha384-giJF6kkoqNQ00vy+HMDP7azOuL0xtbfIcaT9wjKHr8RbDVddVHyTfAAsrekwKmP1"
+	crossorigin="anonymous">
+<script
+	src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/js/bootstrap.bundle.min.js"
+	integrity="sha384-ygbV9kiqUc6oa4msXn9868pTtWMgiQaeYH7/t7LECLbyPA2x65Kgf80OJFdroafW"
+	crossorigin="anonymous">
+	
+</script>
+</head>
+
+<body>
+	<div id="app" class="container">
+		<nav class="navbar navbar-expand-md">
+			<a class="navbar-brand">Austin's Music Store</a>
+			<button class="navbar-toggler" type="button" data-toggle="collapse"
+				data-target="#navbarNav">
+				<span class="navbar-toggler-icon"></span>
+			</button>
+			<div class="collapse navbar-collapse" id="navbarNav">
+				<ul class="navbar-nav mr-auto">
+					<li class="nav-item active"><a class="nav-link" href="/">Home</a></li>
+					<li class="nav-item"><a class="nav-link" href="/music">Products</a>
+					</li>
+				</ul>
+				<%
+				User u = (User) session.getAttribute("user"); 
+				if(u != null && u.getName().equals("admin")) {
+				%>
+					<ul class="navbar-nav ms-auto">
+						<li class="nav-item"><a class="nav-link">Welcome: <%=u.getName()%></a></li>
+						<li class="nav-item"><a class="nav-link" href="/logout">Logout</a></li>
+						<li class="nav-item"><a class="nav-link" href="/admin">Admin</a></li>
+					</ul>
+				<%
+				}
+				else if(u != null) {
+				%>
+					<ul class="navbar-nav ms-auto">
+						<li class="nav-item"><a class="nav-link">Welcome: <%=u.getName()%></a></li>
+						<li class="nav-item"><a class="nav-link" href="/logout">Logout</a></li>
+						<li class="nav-item"><a class="nav-link" href="/cart">Cart</a></li>
+					</ul>
+				<%
+				} else {
+				%>
+					<ul class="navbar-nav ms-auto">
+						<li class="nav-item"><a class="nav-link" href="/login">Login</a></li>
+						<li class="nav-item"><a class="nav-link" href="/register">Register</a></li>
+					</ul>
+				<%
+				}
+				%>
+			</div>
+		</nav>
+	</div>
+
+	<div id="carouselExampleControls" class="carousel slide"
+		data-ride="carousel">
+		<ol class="carousel-indicators">
+			<li data-target="#carouselExampleControls" data-slide-to="0"
+				class="active"></li>
+			<li data-target="#carouselExampleControls" data-slide-to="1"></li>
+			<li data-target="#carouselExampleControls" data-slide-to="2"></li>
+		</ol>
+		<div class="carousel-inner">
+			<div class="carousel-item active">
+				<div class="card mx-auto" style="width: 30rem;">
+					<img class="card-img-top"
+						src="https://damp-island-74248.herokuapp.com/resources/images/back1.jpg"
+						alt="Welcome">
+					<div class="carousel-caption">
+						<h1>Welcome to Austin's Music Store</h1>
+						<p>Here you can browse and buy Instruments, Records and music
+							related Accessories. Order Now for Your Amazing New</p>
+					</div>
+				</div>
+			</div>
+			<div class="carousel-item">
+				<div class="card mx-auto" style="width: 30rem;">
+					<img class="card-img-top"
+						src="https://damp-island-74248.herokuapp.com/resources/images/back2.jpg"
+						alt="Facts">
+					<div class="carousel-caption">
+						<h1>Facts You Should Know About Music</h1>
+						<p>Music brings joy, to all of our hearts, It's one of those,
+							emotional arts.</p>
+					</div>
+				</div>
+			</div>
+			<div class="carousel-item">
+				<div class="card mx-auto" style="width: 30rem;">
+					<img class="card-img-top"
+						src="https://damp-island-74248.herokuapp.com/resources/images/back3.jpg"
+						alt="Promotional Jazz">
+					<div class="carousel-caption">
+						<h1>It's A Jazz Affair</h1>
+						<p>Through ups and downs, Somehow I manage to survive in life.</p>
+					</div>
+				</div>
+			</div>
+		</div>
+		<a class="carousel-control-prev" href="#carouselExampleControls"
+			role="button" data-slide="prev"> <span
+			class="carousel-control-prev-icon" aria-hidden="true"></span> <span
+			class="sr-only">Previous</span>
+		</a> <a class="carousel-control-next" href="#carouselExampleControls"
+			role="button" data-slide="next"> <span
+			class="carousel-control-next-icon" aria-hidden="true"></span> <span
+			class="sr-only">Next</span>
+		</a>
+	</div>
+</body>
+</html>
+
+------------------------------------------------
+
+<%@ page language="java" contentType="text/html; charset=ISO-8859-1"
+	pageEncoding="ISO-8859-1"%>
+<%@ page import="com.music.entity.Music"%>
+<%@ page import="com.music.entity.User"%>
+<%@ page import="java.util.*"%>
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="ISO-8859-1">
+<script
+	src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"
+	integrity="sha384-q2kxQ16AaE6UbzuKqyBE9/u/KzioAlnx2maXQHiDX9d4/zp8Ok3f+M7DPm+Ib6IU"
+	crossorigin="anonymous"></script>
+<link
+	href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/css/bootstrap.min.css"
+	rel="stylesheet"
+	integrity="sha384-giJF6kkoqNQ00vy+HMDP7azOuL0xtbfIcaT9wjKHr8RbDVddVHyTfAAsrekwKmP1"
+	crossorigin="anonymous">
+<script
+	src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/js/bootstrap.min.js"
+	integrity="sha384-pQQkAEnwaBkjpqZ8RU1fF1AKtTcHJwFl3pblpTlHXybJjHpMYo79HY3hIi4NKxyj"
+	crossorigin="anonymous"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+<title>Products</title>
+</head>
+<body>
+	<div id="app" class="container">
+		<nav class="navbar navbar-expand-md">
+			<a class="navbar-brand">Austin's Music Store</a>
+			<button class="navbar-toggler" type="button" data-toggle="collapse"
+				data-target="#navbarNav">
+				<span class="navbar-toggler-icon"></span>
+			</button>
+			<div class="collapse navbar-collapse" id="navbarNav">
+				<ul class="navbar-nav mr-auto">
+					<li class="nav-item active"><a class="nav-link" href="/">Home</a></li>
+					<li class="nav-item"><a class="nav-link" href="/music">Products</a>
+					</li>
+				</ul>
+				<%
+				User u = (User) session.getAttribute("user"); 
+				if(u != null && u.getName().equals("admin")) {
+				%>
+					<ul class="navbar-nav ms-auto">
+						<li class="nav-item"><a class="nav-link">Welcome: <%=u.getName()%></a></li>
+						<li class="nav-item"><a class="nav-link" href="/logout">Logout</a></li>
+						<li class="nav-item"><a class="nav-link" href="/admin">Admin</a></li>
+					</ul>
+				<%
+				}
+				else if(u != null) {
+				%>
+					<ul class="navbar-nav ms-auto">
+						<li class="nav-item"><a class="nav-link">Welcome: <%=u.getName()%></a></li>
+						<li class="nav-item"><a class="nav-link" href="/logout">Logout</a></li>
+						<li class="nav-item"><a class="nav-link" href="/cart">Cart</a></li>
+					</ul>
+				<%
+				} else {
+				%>
+					<ul class="navbar-nav ms-auto">
+						<li class="nav-item"><a class="nav-link" href="/login">Login</a></li>
+						<li class="nav-item"><a class="nav-link" href="/register">Register</a></li>
+					</ul>
+				<%
+				}
+				%>
+			</div>
+		</nav>
+	</div>
+	
+	<div class="card text-left">
+		<div style="margin: auto;">
+			<h1>All Products</h1>
+			<h3>Checkout all the awesome products available now!</h3>
+			
+			Search: <input type="text" id="myInput" onkeyup="myFunction()" placeholder="Product name..." title="Type in a name">
+			
+			<table class="table table-striped" border='2' id="myTable">
+				<tr class="table table-primary" style="text-align: center">
+					<th>Photo Thumb</th>	
+					<th>Product Name</th>	
+					<th>Category</th>	
+					<th>Condition</th>	
+					<th>Price</th>	
+					<th> </th>
+				</tr>
+				
+				<%
+				ArrayList<Music> musics = (ArrayList<Music>) session.getAttribute("musics");
+				for (Music m : musics) {
+				%>
+					<tr style="text-align: center">
+						<td> <img style="width: 75px; height: 75px" src="<%=m.getUrl()%>" alt="song image" /> </td>
+						<td><%=m.getProductname()%></td>
+						<td><%=m.getCategory()%></td>
+						<td><%=m.getQuality()%></td>
+						<td><%=m.getPrice()%></td>
+						<td>
+							<a href="/music/<%=m.getProductname()%>">
+								<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-info-circle-fill" viewBox="0 0 16 16">
+  									<path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16zm.93-9.412l-1 4.705c-.07.34.029.533.304.533.194 0 .487-.07.686-.246l-.088.416c-.287.346-.92.598-1.465.598-.703 0-1.002-.422-.808-1.319l.738-3.468c.064-.293.006-.399-.287-.47l-.451-.081.082-.381 2.29-.287zM8 5.5a1 1 0 1 1 0-2 1 1 0 0 1 0 2z"/>
+								</svg>
+							</a>
+							<%
+							if(u != null && u.getName().equals("admin")) {
+							%>
+								<a href="/admin/deleteproduct/<%=m.getProductname()%>" ><i class="fa fa-close"></i></a>
+								<a href="/admin/editproduct/<%=m.getProductname()%>">
+									<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-pencil-square" viewBox="0 0 16 16">
+  										<path d="M15.502 1.94a.5.5 0 0 1 0 .706L14.459 3.69l-2-2L13.502.646a.5.5 0 0 1 .707 0l1.293 1.293zm-1.75 2.456l-2-2L4.939 9.21a.5.5 0 0 0-.121.196l-.805 2.414a.25.25 0 0 0 .316.316l2.414-.805a.5.5 0 0 0 .196-.12l6.813-6.814z"/>
+  										<path fill-rule="evenodd" d="M1 13.5A1.5 1.5 0 0 0 2.5 15h11a1.5 1.5 0 0 0 1.5-1.5v-6a.5.5 0 0 0-1 0v6a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1-.5-.5v-11a.5.5 0 0 1 .5-.5H9a.5.5 0 0 0 0-1H2.5A1.5 1.5 0 0 0 1 2.5v11z"/>
+									</svg>
+								</a>	
+							<%} %>
+						</td>
+					</tr>
+				<%}%>
+			</table>
+			
+			<%
+			if(u != null && u.getName().equals("admin")) {
+			%>
+				<a href="/admin/addproduct" class="btn btn-primary">Add Product</a>
+			<%
+			}
+			%>
+		</div>
+	</div>
+	
+	<script>
+		function myFunction() {
+			var input, filter, table, tr, td, i, txtValue;
+			input = document.getElementById("myInput");
+			filter = input.value.toUpperCase();
+			table = document.getElementById("myTable");
+			tr = table.getElementsByTagName("tr");
+			for (i = 0; i < tr.length; i++) {
+				td = tr[i].getElementsByTagName("td")[1];
+				if (td) {
+					txtValue = td.textContent || td.innerText;
+					if (txtValue.toUpperCase().indexOf(filter) > -1) {
+						tr[i].style.display = "";
+					} else {
+						tr[i].style.display = "none";
+					}
+				}
+			}
+		}
+	</script>
+</body>
+</html>
+
+------------------------------------------------
+
+<%@ page language="java" contentType="text/html; charset=ISO-8859-1"
+	pageEncoding="ISO-8859-1"%>
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="ISO-8859-1">
+<link
+	href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/css/bootstrap.min.css"
+	rel="stylesheet"
+	integrity="sha384-giJF6kkoqNQ00vy+HMDP7azOuL0xtbfIcaT9wjKHr8RbDVddVHyTfAAsrekwKmP1"
+	crossorigin="anonymous">
+<script
+	src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/js/bootstrap.min.js"
+	integrity="sha384-pQQkAEnwaBkjpqZ8RU1fF1AKtTcHJwFl3pblpTlHXybJjHpMYo79HY3hIi4NKxyj"
+	crossorigin="anonymous"></script>
+<script
+	src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"
+	integrity="sha384-q2kxQ16AaE6UbzuKqyBE9/u/KzioAlnx2maXQHiDX9d4/zp8Ok3f+M7DPm+Ib6IU"
+	crossorigin="anonymous"></script>
+
+<title>Register</title>
+</head>
+<body>
+	<div id="app" class="container">
+		<nav class="navbar navbar-expand-md">
+			<a class="navbar-brand">Austin's Music Store</a>
+			<button class="navbar-toggler" type="button" data-toggle="collapse"
+				data-target="#navbarNav">
+				<span class="navbar-toggler-icon"></span>
+			</button>
+			<div class="collapse navbar-collapse" id="navbarNav">
+				<ul class="navbar-nav mr-auto">
+					<li class="nav-item active"><a class="nav-link" href="/">Home</a></li>
+					<li class="nav-item"><a class="nav-link" href="/music">Products</a>
+					</li>
+				</ul>
+				<ul class="navbar-nav ms-auto">
+					<li class="nav-item"><a class="nav-link"
+						href="/login">Login</a></li>
+					<li class="nav-item"><a class="nav-link"
+						href="/register">Register</a></li>
+				</ul>
+			</div>
+		</nav>
+	</div>
+
+	<div style="max-width: 750px; margin: auto; border: 1px solid black; padding: 10px; margin-top: 30px; height: 1715px; position: relative;"
+		class="card text-dark bg-light mb-3">
+		<div>
+			<h1 style="margin-top: 3%"card-title">Register Customer</h1>
+			<h3 style="margin-top: 3%"card-title">Please fill in your information below:</h3>
+			
+			</br>
+			
+			<form class="form-group" method="post" action="register">
+				<h2 style="margin-top: 3%"card-title">Basic Info</h2>
+				<label class="card-header">Name</label> 
+				<input class="form-control" type="text" name="name" required="required">
+				<label class="card-header">Email</label> 
+				<input class="form-control" type="text" name="email" required="required">
+				<label class="card-header">Phone</label> 
+				<input class="form-control" type="text" name="phone" required="required">
+				<label class="card-header">Username</label> 
+				<input class="form-control" type="text" name="username" required="required">
+				<label class="card-header">Password</label> 
+				<input class="form-control" type="password" name="password" required="required">
+				
+				</br> 
+				
+				<h2 style="margin-top: 3%"card-title">Billing Address</h2>
+				<label class="card-header">Street Name & Apartment No.</label> 
+				<input class="form-control" type="text" name="billAddress" required="required">
+				<label class="card-header">City</label> 
+				<input class="form-control" type="text" name="billCity" required="required">
+				<label class="card-header">State</label> 
+				<input class="form-control" type="text" name="billState" required="required">
+				<label class="card-header">Country</label> 
+				<input class="form-control" type="text" name="billCountry" required="required">
+				<label class="card-header">Zipcode</label> 
+				<input class="form-control" type="text" name="billZipcode" required="required">
+				
+				</br>
+				
+				<h2 style="margin-top: 3%"card-title">Shipping Address</h2>
+				<label class="card-header">Street Name & Apartment No.</label> 
+				<input class="form-control" type="text" name="shipAddress" required="required">
+				<label class="card-header">City</label> 
+				<input class="form-control" type="text" name="shipCity" required="required">
+				<label class="card-header">State</label> 
+				<input class="form-control" type="text" name="shipState" required="required">
+				<label class="card-header">Country</label> 
+				<input class="form-control" type="text" name="shipCountry" required="required">
+				<label class="card-header">Zipcode</label> 
+				<input class="form-control" type="text" name="shipZipcode" required="required">
+				
+				</br>
+				
+				<input class="btn btn-primary" type="submit" value="Create Customer">
+				<a href="/" class="btn btn-danger">Cancel</a>
+			</form>
+		</div>
+	</div>
+</body>
+</html>
+
+------------------------------------------------
+
+<%@ page language="java" contentType="text/html; charset=ISO-8859-1"
+	pageEncoding="ISO-8859-1"%>
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="ISO-8859-1">
+<link
+	href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/css/bootstrap.min.css"
+	rel="stylesheet"
+	integrity="sha384-giJF6kkoqNQ00vy+HMDP7azOuL0xtbfIcaT9wjKHr8RbDVddVHyTfAAsrekwKmP1"
+	crossorigin="anonymous">
+<script
+	src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/js/bootstrap.min.js"
+	integrity="sha384-pQQkAEnwaBkjpqZ8RU1fF1AKtTcHJwFl3pblpTlHXybJjHpMYo79HY3hIi4NKxyj"
+	crossorigin="anonymous"></script>
+<script
+	src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"
+	integrity="sha384-q2kxQ16AaE6UbzuKqyBE9/u/KzioAlnx2maXQHiDX9d4/zp8Ok3f+M7DPm+Ib6IU"
+	crossorigin="anonymous"></script>
+
+<title>Register</title>
+</head>
+<body>
+	<div id="app" class="container">
+		<nav class="navbar navbar-expand-md">
+			<a class="navbar-brand">Austin's Music Store</a>
+			<button class="navbar-toggler" type="button" data-toggle="collapse"
+				data-target="#navbarNav">
+				<span class="navbar-toggler-icon"></span>
+			</button>
+			<div class="collapse navbar-collapse" id="navbarNav">
+				<ul class="navbar-nav mr-auto">
+					<li class="nav-item active"><a class="nav-link" href="/">Home</a></li>
+					<li class="nav-item"><a class="nav-link" href="/music">Products</a>
+					</li>
+				</ul>
+				<ul class="navbar-nav ms-auto">
+					<li class="nav-item"><a class="nav-link"
+						href="/login">Login</a></li>
+					<li class="nav-item"><a class="nav-link"
+						href="/register">Register</a></li>
+				</ul>
+			</div>
+		</nav>
+	</div>
+
+	<div style="max-width: 750px; margin: auto; border: 1px solid black; padding: 10px; margin-top: 30px; height: 1715px; position: relative;"
+		class="card text-dark bg-light mb-3">
+		<div>
+			<h1 style="margin-top: 3%"card-title">Register Customer</h1>
+			<h3 style="margin-top: 3%"card-title">Please fill in your information below:</h3>
+			
+			</br>
+			
+			<form class="form-group" method="post" action="register">
+				<h2 style="margin-top: 3%"card-title">Basic Info</h2>
+				<label class="card-header">Name</label> 
+				<input class="form-control" type="text" name="name" required="required">
+				<label class="card-header">Email</label> 
+				<input class="form-control" type="text" name="email" required="required">
+				<label class="card-header">Phone</label> 
+				<input class="form-control" type="text" name="phone" required="required">
+				<label class="card-header">Username</label> 
+				<input class="form-control" type="text" name="username" required="required">
+				<label class="card-header">Password</label> 
+				<input class="form-control" type="password" name="password" required="required">
+				
+				</br> 
+				
+				<h2 style="margin-top: 3%"card-title">Billing Address</h2>
+				<label class="card-header">Street Name & Apartment No.</label> 
+				<input class="form-control" type="text" name="billAddress" required="required">
+				<label class="card-header">City</label> 
+				<input class="form-control" type="text" name="billCity" required="required">
+				<label class="card-header">State</label> 
+				<input class="form-control" type="text" name="billState" required="required">
+				<label class="card-header">Country</label> 
+				<input class="form-control" type="text" name="billCountry" required="required">
+				<label class="card-header">Zipcode</label> 
+				<input class="form-control" type="text" name="billZipcode" required="required">
+				
+				</br>
+				
+				<h2 style="margin-top: 3%"card-title">Shipping Address</h2>
+				<label class="card-header">Street Name & Apartment No.</label> 
+				<input class="form-control" type="text" name="shipAddress" required="required">
+				<label class="card-header">City</label> 
+				<input class="form-control" type="text" name="shipCity" required="required">
+				<label class="card-header">State</label> 
+				<input class="form-control" type="text" name="shipState" required="required">
+				<label class="card-header">Country</label> 
+				<input class="form-control" type="text" name="shipCountry" required="required">
+				<label class="card-header">Zipcode</label> 
+				<input class="form-control" type="text" name="shipZipcode" required="required">
+				
+				</br>
+				
+				<input class="btn btn-primary" type="submit" value="Create Customer">
+				<a href="/" class="btn btn-danger">Cancel</a>
+			</form>
+		</div>
+	</div>
+</body>
+</html>
